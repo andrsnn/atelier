@@ -1,0 +1,71 @@
+id: goal-seeker
+name: Goal seeker — Anchor → Attempt → Evaluate ↺ Unblock (thinks outside the box)
+description: "A self-unblocking, anti-drift goal loop. Pursues a GOAL, has Gemini objectively judge the real output (images + video), and when stuck THINKS OUTSIDE THE BOX — searches how others solved it, studies reference products, tries genuine alternatives — instead of retrying the same failing thing. Re-anchors to the goal every loop so it doesn't drift. Pick a model per phase."
+version: v3-seeker-4
+settings:
+  maxLoops: 20
+  maxTurns: 200
+  phaseTimeoutMin: 60
+states:
+  - id: anchor
+    name: Anchor
+    gate: true
+    model: claude:sonnet
+    tools: [read_file, list_directory, search_code, run_command, write_file, display_artifact]
+    prompt: |-
+      Turn the loop's goal into a CRISP, PERSISTENT ANCHOR that stops the goal from drifting. Explore just enough of the repo to ground it in reality, then write "goal-anchor.md" with:
+      1. GOAL — one tight paragraph, in the user's own terms.
+      2. SUCCESS CRITERIA — a short, OBJECTIVELY CHECKABLE list. Prefer criteria a model can verify by LOOKING at an image/video (e.g. "sprite sheet: 4 directions, 6 frames each, one consistent character + palette, clean transparent background, no artifacts").
+      3. DONE = every criterion passes. BLOCKED = two attempts in a row make no measurable progress on the same criterion.
+      4. CONSTRAINTS + explicit out-of-scope.
+      If the result is VISUAL (an image, a video, a product/UI demo), the success criteria MUST include capture quality: every shot shows a CLEAN surface (no stray name/sign-in/consent prompts or unrelated modals), the claimed feature is actually VISIBLE and active in its shot, framing is LEGIBLE but keeps context (readable, never over-zoomed to a few tokens, never too wide), and title cards hold long enough to read.
+      This file is RE-READ AT THE START OF EVERY PHASE — keep it tight and stable so the goal can't drift. display_artifact it as "Goal Anchor" (markdown), then request_approval.
+  - id: attempt
+    name: Attempt
+    model: claude:sonnet
+    maxTurns: 250
+    tools: [read_file, list_directory, search_code, run_command, write_file, edit_file, display_artifact, start_dev_server, screenshot_page, record_walkthrough, analyze_image, gemini_eval]
+    prompt: |-
+      FIRST re-read goal-anchor.md — stay locked on the goal, don't drift. Then do the NEXT concrete increment toward it, for real (write the file, run the generation, produce the artifact). If you arrived here from Unblock, follow its plan EXACTLY and do NOT repeat the approach that was already failing. Produce a real, inspectable OUTPUT — an image, a video, or a file. Capture it (screenshot_page / record_walkthrough for anything visual). display_artifact the ACTUAL output (not a description), then request_approval.
+
+      CAPTURE QUALITY (for any UI / product / video output): capture CLEAN surfaces — DISMISS any stray prompt/modal/banner first (a name/sign-in/identity dialog, a cookie/consent notice, an empty or placeholder state) so it never appears in a shot; make sure the thing each shot is ABOUT is actually visible and doing something (a feature beat must SHOW that feature happening, on the right surface); and frame each shot LEGIBLE but with enough context to recognize the surface — readable text, never over-zoomed down to a few tokens, never so wide it's unreadable; hold title cards long enough to read headline + subtitle. Self-check a couple of your captures with gemini_eval BEFORE moving on so these don't slip through to Evaluate.
+  - id: evaluate
+    name: Evaluate
+    rejectTo: unblock
+    model: claude:sonnet
+    tools: [read_file, list_directory, run_command, screenshot_page, record_walkthrough, gemini_eval, analyze_image, display_artifact]
+    prompt: |-
+      Judge the current output against goal-anchor.md's success criteria with REAL evidence — never self-assessment. For ANY image or VIDEO output, call gemini_eval with a criteria-specific question ("Score 1-10 and list every defect vs: <criteria>") — Gemini is the objective judge; quote its verdict. Go criterion by criterion: PASS / FAIL with exactly what was seen. display_artifact an "Evaluation" (markdown): the per-criterion table + Gemini's notes + an overall verdict.
+
+      VISUAL / UI OUTPUT QUALITY — whenever the output is an image, a video, or a product/UI capture, gemini_eval MUST ALSO check each of these per segment, and you MUST reject on ANY failure (these are the quiet capture-killers):
+      - CLEAN SURFACE: no stray chrome that isn't part of what's being shown — a "set your name" / sign-in / identity prompt, an unrelated modal or popover, a cookie/consent banner, an empty or placeholder state, a dev overlay. Each shot shows ONLY the intended, populated surface.
+      - ACTUALLY SHOWS THE THING: the feature/subject a segment claims is ON SCREEN and visibly doing it (e.g. a "Conductor" beat must show the Conductor panel actively reading comments / deciding — not a static or unrelated screen). Telling ≠ showing.
+      - LEGIBLE + IN CONTEXT: text is READABLE at the delivered size, but framed so you can still tell what the surface is — NOT zoomed so far that context is lost (e.g. a code/YAML shot cropped to a handful of tokens), and NOT so wide the text is unreadable. Also: title cards must stay on screen long enough to read headline AND subtitle.
+      Ask gemini_eval explicitly about these for EACH segment, quote what it found, and reject to Unblock naming the exact segment(s) that fail.
+
+      If EVERY criterion (including the visual-quality checks) passes, request_approval (→ Deliver). If ANY fails, reject with the specific failing segment + evidence (→ Unblock).
+  - id: deliver
+    name: Deliver
+    gate: true
+    model: claude:sonnet
+    tools: [read_file, run_command, display_artifact]
+    prompt: |-
+      The goal is Gemini-verified met. Deliver it: save / commit / export as the goal requires.
+      Then PRESENT THE ACTUAL DELIVERABLE so the human can see it right here, on this phase — call display_artifact with `file:` set to the produced file's workspace path: a .mp4/.png/.gif plays/shows inline, a .zip/.csv/.pdf/dataset gets a Download button. The human must be able to WATCH / OPEN the real output on the Deliver phase itself — never just a prose note that points at a git path or a PR (they should not have to hunt back through earlier phases to find it). If the goal is code/repo-only with no single viewable file, present the key file(s) or a short demo capture instead.
+      If the result is downloadable FILE output(s) the human keeps (an .mp4/.zip/.csv/dataset/etc.), hand back the FINAL set with expose_output — the one or few files that ARE the result. The human sees exactly that as "the output" (not every intermediate file). Call it ONCE, at the very end, with the complete final set.
+      THEN display_artifact a short "Delivered" note — what it is, where it lives, how to use it, and which success criteria it meets — and request_approval.
+  - id: unblock
+    name: Unblock
+    offPath: true
+    returnTo: attempt
+    model: claude:sonnet
+    tools: [read_file, list_directory, search_code, run_command, write_file, display_artifact, gemini_eval]
+    prompt: |-
+      You are the OUTSIDE-THE-BOX brain. Re-read goal-anchor.md FIRST (anti-drift), then read the latest Evaluation + the attempt's errors/output.
+      Decide, and act:
+      • GOAL ACHIEVED? If the criteria actually pass on a fair reading, say so plainly and don't loop needlessly.
+      • Otherwise, is it BLOCKED (same failure twice, no measurable progress)? Then DO NOT propose retrying the same thing. This is almost certainly a SOLVED PROBLEM — go FIND how others solved it:
+        - Use WebSearch / WebFetch to look up the exact error, the model/library docs, GitHub issues, and known-good configs (e.g. "ControlNet + SDXL pose not applying", the LoRA/scheduler settings that actually work).
+        - Study how REFERENCE PRODUCTS achieve the user's real goal — search their docs / blog / writeups for the approach (e.g. how PixelLab structures sprite generation).
+        - Consider GENUINE ALTERNATIVES: a different model / library / parameter / pipeline, a smaller decomposition, a documented workaround.
+      Write a concrete NEXT-ATTEMPT PLAN: the specific alternative to try, WHY it should work (cite what you found — links/versions/settings), and the exact steps. Keep it anchored to the success criteria; never let the goal drift or silently shrink. display_artifact an "Unblock Plan" (markdown), then request_approval (→ back to Attempt).

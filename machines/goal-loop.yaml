@@ -1,0 +1,35 @@
+id: goal-loop
+name: Goal loop — Brief → Make → Evaluate ↺ → Deliver
+description: "A directive loop: pursue a GOAL and iterate until it's met. Evaluate loops back to Make. Not SDLC — for anything (a doc, a design, a dataset, a deploy)."
+version: v3-goal-3
+settings:
+  maxLoops: 12
+  maxTurns: 120
+  phaseTimeoutMin: 45
+states:
+  - id: brief
+    name: Brief
+    gate: true
+    tools: [read_file, list_directory, search_code, run_command, write_file, display_artifact, analyze_image]
+    prompt: |-
+      Turn the loop's goal into a tight brief: what "done" looks like in the user's words, and a short, checkable list of SUCCESS CRITERIA the result must meet. If the goal is genuinely ambiguous, list a couple of specific questions (with sensible defaults). display_artifact the brief ("Brief", markdown), then request_approval.
+  - id: make
+    name: Make
+    tools: [read_file, list_directory, search_code, run_command, write_file, edit_file, display_artifact, start_dev_server, screenshot_page, record_walkthrough, analyze_image]
+    maxTurns: 200
+    prompt: |-
+      Produce the thing the goal asks for — for real. Use whatever tools fit (write files, run commands, generate, capture). Follow the brief's success criteria. If you were sent back from Evaluate, address EVERY point. When you have a result, display_artifact it (the actual output, not a description) and request_approval.
+  - id: evaluate
+    name: Evaluate
+    rejectTo: make
+    tools: [read_file, list_directory, search_code, run_command, screenshot_page, record_walkthrough, analyze_image, display_artifact]
+    prompt: |-
+      Judge the result against the brief's success criteria — with real evidence (look at it: screenshots, output, data). For each criterion, PASS/FAIL with what you saw. display_artifact an "Evaluation" (markdown). If any criterion fails, reject with specific, actionable reasons (loops back to Make). Only request_approval when the goal is genuinely met.
+  - id: deliver
+    name: Deliver
+    tools: [read_file, run_command, display_artifact]
+    prompt: |-
+      Deliver the result: make sure it's saved/committed/exported as the goal requires.
+      Then PRESENT THE ACTUAL DELIVERABLE so the human can see it right here, on this phase — call display_artifact with `file:` set to the produced file's workspace path: a .mp4/.png/.gif plays/shows inline, a .zip/.csv/.pdf/dataset gets a Download button. The human must be able to WATCH / OPEN the real output on the Deliver phase itself — never just a prose note pointing at a path (they should not have to hunt back through earlier phases). If it's code/repo-only with no single viewable file, present the key file(s) or a short demo capture instead.
+      If the result is downloadable FILE output(s) the human keeps (an .mp4/.zip/.csv/dataset/etc.), hand back the FINAL set with expose_output — the one or few files that ARE the result. The human sees exactly that as "the output" (not every intermediate file a loop returned). Call it ONCE, at the very end, with the complete final set.
+      THEN display_artifact a short "Delivered" note (what it is, where it lives, how to use it) and request_approval.

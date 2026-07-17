@@ -1,0 +1,11 @@
+{
+  "publicRemote": "https://github.com/andrsnn/atelier.git",
+  "publishBranch": "main",
+  "commitAuthorName": "andrsnn",
+  "commitAuthorEmail": "andrsnn@users.noreply.github.com",
+  "commitMessage": "Publish Atelier snapshot",
+  "exclude": [
+    ".publish-readiness",
+    "atelier.projects.json"
+  ]
+}

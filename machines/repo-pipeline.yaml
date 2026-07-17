@@ -1,0 +1,318 @@
+id: default-repo-pipeline
+name: Repo pipeline — PRD→Spec→Mock→Build→Review→QA→Acceptance→PR
+description: "Single agent, real repo, non-linear: PRD clarifies;
+  Review/QA/Acceptance loop back to Build until it passes; PR opens it. One
+  example loop — build your own."
+version: v3-repo-36
+settings:
+  maxLoops: 10
+  maxTurns: 120
+  phaseTimeoutMin: 45
+  # Run modes THIS machine offers (rendered as a dropdown in the UI). Each id maps to
+  # per-state `modes:` prompt overrides below. A generic mechanism — other machines
+  # declare their own (or none). The `default` is used when a run doesn't pick one.
+  modes:
+    - { id: rigorous, label: Rigorous, icon: "🔬", default: true, hint: "Full per-case verification against the real running app." }
+    - { id: smoke, label: Smoke, icon: "💨", hint: "Boots + one happy path; you verify the functionality yourself." }
+    - { id: mockApi, label: Mock API, icon: "🎭", hint: "External/paid calls are faked by a live LLM — no upstream spend." }
+states:
+  - id: prd
+    name: PRD
+    gate: true
+    tools:
+      - read_file
+      - list_directory
+      - search_code
+      - run_command
+      - write_file
+      - edit_file
+      - display_artifact
+      - start_dev_server
+      - authenticate
+      - screenshot_page
+      - record_walkthrough
+      - analyze_image
+    prompt: |-
+      Turn the loop's goal into a short PRD (product requirements) the rest of the machine can build against — and CLARIFY anything ambiguous BEFORE work starts.
+
+      If a reference image / description was provided (see below), factor it in. Explore just enough of the codebase to ground the PRD in reality (don't design the implementation yet — that's Spec).
+
+      Write "prd.md": the problem & who it's for, the core user-facing outcomes (what "done" looks like in the user's words), explicit in/out of scope, and any assumptions you're making. If the goal is genuinely ambiguous on functionality (behaviour, edge cases, scope) — and only then — add a "## Open questions" section with SPECIFIC, answerable questions (offer a sensible default for each so it can proceed if you don't hear back).
+
+      display_artifact the PRD (markdown, name "PRD"), then request_approval. The human answers your questions with a comment + re-run, or approves to proceed. Do NOT invent requirements the human clearly didn't ask for.
+  - id: spec
+    name: Spec
+    gate: true
+    tools:
+      - read_file
+      - list_directory
+      - search_code
+      - run_command
+      - write_file
+      - edit_file
+      - display_artifact
+      - start_dev_server
+      - authenticate
+      - screenshot_page
+      - record_walkthrough
+      - analyze_image
+    prompt: |-
+      Understand the loop's goal + PRD against the REAL codebase, then write a buildable spec.
+      Explore first: find the relevant pages/components/APIs for this feature (list_directory, search_code, read_file) and learn the project's conventions. Then write "spec.md" with: the problem, the user-facing behaviour & flows, scope (in/out), a numbered acceptance checklist QA can verify, the concrete technical approach naming the actual files/components you'll touch, and assumptions.
+      ACCEPTANCE CRITERIA MUST BE SUBSTANCE, NOT SHAPE. If the feature's core value depends on a REAL integration (an external model/API call, a real algorithm, an actual generation), do NOT write criteria a hardcoded placeholder could pass — "a result card renders" / "returns 200" / "no console errors" are NOT acceptable for the headline capability. Require instead: the output VARIES with the input (two different inputs → two different, input-appropriate results) AND the real integration is observably invoked (the named API/model call actually fires). Never let a placeholder/stub satisfy acceptance.
+      display_artifact the spec (markdown, name "Spec"), then request_approval.
+  - id: mock
+    name: Mock
+    gate: true
+    # The human may skip this phase when starting a loop (e.g. a back-end-only change
+    # needs no design mocks). Skippable phases are declared here in the YAML.
+    optional: true
+    tools:
+      - read_file
+      - list_directory
+      - search_code
+      - run_command
+      - write_file
+      - edit_file
+      - display_artifact
+      - start_dev_server
+      - authenticate
+      - screenshot_page
+      - record_walkthrough
+      - analyze_image
+    prompt: |-
+      Give the human 3–4 DISTINCT design OPTIONS for the new UI to choose from — not one design iterated to death. Each option should take a genuinely different direction (e.g. layout, information hierarchy, where the primary controls and output live). All must MATCH this app's existing look — read the spec and the real components/styles first.
+
+      Write each option as its own self-contained HTML file: option-1.html, option-2.html, option-3.html (you may use CDNs; real three.js viewer where relevant, realistic content, working primary interactions).
+
+      For EACH option: screenshot_page it ONCE as a scratch self-check (present:false — do NOT flood Deliverables); if you can't see images, analyze_image to confirm it renders and looks good; fix only if it's actually broken (max 1 fix per option). Then present it: display_artifact with kind:"html", name:"Option 1 — <short label>", and file:"option-1.html" (pass the FILE path so the real mock renders in the UI — never write "see the file" in body).
+
+      Once all 3–4 options are presented (and only those — no intermediate screenshots in Deliverables), call request_approval and tell the human to pick one (they click an option and Approve). Do NOT keep iterating.
+  - id: build
+    name: Build
+    maxTurns: 250
+    # No record_walkthrough / screenshot / authenticate here: Build is CODE + COMPILE only.
+    # Booting, login, and any running-app verification belong to the Smoke / QA states.
+    tools:
+      - read_file
+      - list_directory
+      - search_code
+      - run_command
+      - write_file
+      - edit_file
+      - display_artifact
+      - start_dev_server   # ONLY for the rare "ticket explicitly asks Build to test it" case; auto-picks a free port
+    prompt: |-
+      Implement the feature for real, in this repo, following the spec and matching the mock. Edit/create the actual source files and follow the codebase's patterns.
+
+      DO NOT FAKE THE HARD PART. The headline capability (the real model/API call, the actual generation/computation the spec names) must be ACTUALLY implemented — not a hardcoded/procedural/sample result, not a `TODO(real)` placeholder that just "exercises the UI". Prove it's real WITHOUT running the app: read your own handler and confirm the real call is genuinely WIRED — the actual API/model/computation is invoked and its result is what gets returned (not a constant, not sample data) — and that `npx tsc --noEmit` is clean. Whether it actually runs end-to-end and returns real output gets verified LATER (Smoke/QA) — your job is to make the real path EXIST and COMPILE, not to exercise it. If you genuinely cannot complete the real integration (missing creds, unavailable service), say so PLAINLY in your Build Summary as "⚠ NOT DONE: <what's stubbed and why>" and do NOT request approval as if it's done — a convincing placeholder hiding an unbuilt feature is the worst possible outcome.
+
+      STAY IN YOUR LANE — BUILD IS FOR CODE QUALITY + COMPILING, NOT RUNNING THE APP. Your job is to implement the feature well and confirm it TYPECHECKS — not to run, log into, or test the live app. By DEFAULT do NOT start the dev server, do NOT authenticate, do NOT drive the browser, do NOT exercise the feature against a running app: booting, login, and happy-path / per-case verification all belong to the Smoke and QA phases that run AFTER you. Do NOT write a QA Test Plan or per-case "PASS/FAIL" deliverables, do NOT record walkthroughs, do NOT vision-check. ONLY run the app if THIS ticket EXPLICITLY asks Build to test it — and even then keep it to one cheap pass. Over-testing here just burns turns and duplicates QA.
+
+      HARD RULES if you ever do touch runtime (rare — only when explicitly asked to test):
+      - To bring a server up, use start_dev_server (it picks a free, per-run port). NEVER run a bare `npm run dev` / `next dev` yourself, and NEVER bind, free, or `kill` a fixed port like 7777 — that port is very likely the user's OWN running app; killing it is a serious mistake.
+      - NEVER read or use production secrets (a real `.env.local`, a prod database/Redis URL, a prod API token) and NEVER try to log in by guessing passwords, reading password hashes, or otherwise defeating auth. Authentication against a real app is the QA phase's job, using repo test fixtures — not yours. If confirming the feature would need a logged-in running app, STOP and leave it to Smoke/QA; note in your Build Summary exactly what still needs runtime verification.
+
+      CRITICAL — finish the WIRING, not just the pieces:
+      - If you define a flag/branch/handler (e.g. is3DMode, handleX), you MUST actually render/call it. A defined-but-unused code path = broken feature. Grep your own new symbols to confirm each is referenced.
+      - DEPENDENCIES: node_modules is SHARED with the host repo, so an import can resolve even when the package is NOT in package.json. Any package you import that isn't already a dependency you MUST add to package.json (and the lockfile) — otherwise CI fails. Check: for each new import, grep package.json.
+      - Verify with run_command: npx tsc --noEmit must be clean for src/ before you finish.
+
+      COMMITS: stage only the source files you changed (git add <paths>) — do NOT 'git add -A'. Factory scratch (spec.md, mock.html, option-*.html, .captures/) lives in this folder and must NOT land in the PR.
+
+      Once the core change is wired, declared, and typechecks, STOP — don't over-polish. Commit, then display_artifact a "Build Summary" (markdown: files changed, what each does, how to preview, and a checklist of each acceptance criterion ↔ where it's implemented). For the HEADLINE capability, include a short REALITY note: point to the file:line where the real model/API call is invoked and its result returned (NOT a constant / sample), so QA knows what to exercise and that it's wired, not a placeholder. (Leave proving it actually RUNS end-to-end — and the exhaustive two-input, every-case verification — to Smoke/QA.) If you could NOT complete the real integration (missing creds, unavailable service), write "⚠ NOT DONE: <what's stubbed and why>" instead — do NOT hide it behind a placeholder. Requesting approval with a stubbed/placeholder headline capability and no such disclosure is a hard failure. Then call request_approval. If you were sent back with review feedback, address EVERY point, then finish the same way.
+  - id: review
+    name: Review
+    rejectTo: build
+    tools:
+      - read_file
+      - list_directory
+      - search_code
+      - run_command
+      - write_file
+      - edit_file
+      - display_artifact
+      - start_dev_server
+      - authenticate
+      - screenshot_page
+      - record_walkthrough
+      - analyze_image
+    prompt: |-
+      Critically review the diff for CORRECTNESS and SECURITY. Read the changed files (git diff) and the surrounding code. Look for: bugs, broken/edge cases, missing pieces from the spec, injection/authz/secret-handling issues, and anything that doesn't follow the codebase conventions.
+      HOLLOW-IMPLEMENTATION CHECK (the most dangerous defect — a feature that LOOKS done but is a stub): for the spec's CORE capability, open the implementing code and confirm it actually calls the real integration the spec names. Grep the diff for TODO/placeholder/procedural/sample/stub/mock in the core path, and for a fixed/bundled asset returned where the real result belongs. If the headline feature's real path is a stub (e.g. the generate function returns a hardcoded mesh instead of calling the model) — that is a CRITICAL defect: reject to Build with the file:line. A convincing placeholder is worse than a visible gap.
+      display_artifact a "Code Review" (markdown) with findings by severity. If there are real defects, call reject with specific, actionable reasons (this loops back to Build). If it's solid, request_approval.
+  - id: qa
+    name: QA
+    rejectTo: build
+    # Skippable when starting a loop (e.g. a quick run where you'll verify yourself).
+    optional: true
+    caseInput:
+      label: "🔬 Smoke-test a scenario"
+      placeholder: "Describe a scenario to verify — e.g. “dark-mode toggle persists across reload”. Added to the ledger and re-run."
+    tools:
+      - read_file
+      - list_directory
+      - search_code
+      - run_command
+      - write_file
+      - edit_file
+      - display_artifact
+      - start_dev_server
+      - authenticate
+      - screenshot_page
+      - record_walkthrough
+      - analyze_image
+    prompt: |-
+      Rigorous QA. Do NOT just confirm the page loads. DECOMPOSE the feature into concrete test cases, then test EACH ONE in series against the real running app, with captured evidence AND a vision check per case.
+
+      THE QA SCENARIO LEDGER (do this EVERY QA run, in EVERY mode — it is the spine of QA).
+      There is ONE canonical, persistent ledger for this branch: the file `QA-SCENARIOS.md` at the repo root. It is the running record of every scenario QA has EVER tested for this ticket — it GROWS run over run and is NEVER reset.
+        • START by reading `QA-SCENARIOS.md` if it exists. Build on it — never start from scratch, never duplicate a row.
+        • This run, EXPAND and UPDATE it: add a row for every NEW scenario you test, and UPDATE the existing row IN PLACE (never duplicate) for any scenario you RE-TEST, refreshing its verdict + "Last tested". Aim to cover at least one thing prior runs missed.
+        • Render it as ONE clean, well-formed GitHub-flavored Markdown table — NO blank lines between rows (a blank line breaks the table). Columns, exactly:
+          | # | Scenario | Expected | Verdict | Last tested | Evidence |
+          Verdict = ✅ PASS / ❌ FAIL / ⏭️ not-yet-tested. "Last tested" = this run's date + mode (e.g. "2026-06-22 · rigorous") for rows you touched this run; leave untouched rows as they were. Evidence = the REAL capture filename (or "—").
+          Put ONE header line above the table: the date, the mode, and a one-line summary of this run ("2 new scenarios, 3 retested, 1 regressed to FAIL").
+        • Write `QA-SCENARIOS.md` back, and display_artifact the whole file as "QA Scenarios" (markdown) so it renders as a clean table.
+        • COMMIT `QA-SCENARIOS.md` on the branch — it is an intentional review artifact (the ONE .md the PR carries) so it persists across QA→Build→QA loops and is visible for review.
+        • If a PR is already open for this branch (`gh pr view` succeeds), UPDATE its body now to embed the latest table (`gh pr edit --body ...`) so reviewers always see current scenario coverage.
+
+      STEP 0 — PROVE IT'S REAL, NOT A PLACEHOLDER (do this FIRST for any generate / fetch / compute feature). The #1 miss: a feature that renders a result but is a stub — it returns a hardcoded/procedural/sample output, ignores the input, and never runs the real integration the spec requires. "A card rendered / HTTP 200 / no console errors" is NOT proof — a placeholder passes all of that.
+         • VARY THE INPUT. Run the core action with TWO clearly different inputs (e.g. prompt "a knight" then "a round chibi bunny"). The outputs MUST be DIFFERENT and reflect the input. SAME / fixed result regardless of input → it's a placeholder/stub → FAIL the headline case and reject to Build.
+         • CONFIRM THE REAL PATH RAN. The real integration the spec names (the model/API call) must actually execute — watch the network for it, read the dev-server log, AND read the handler code. If the served path is a placeholder/fallback/mock/stub branch (an env-gated fallback, a `TODO(real)`, a "procedural placeholder", a bundled sample asset returned instead of the call) → the real feature is UNVERIFIED, which is a FAIL — never write "placeholder used → PASS".
+         • SANITY-CHECK REALISM. If the spec's work is inherently slow (a real 3D / video / model generation takes many seconds-to-minutes) but it "completes" instantly, that's a tell the real model wasn't called — investigate, don't pass.
+      Your acceptance bar for the HEADLINE capability is "produces a REAL, input-specific result via the real integration" — never "renders without error".
+
+      STEP 1 — WRITE THE TEST PLAN. From the spec's acceptance checklist and the actual feature, enumerate the test cases that exercise the REAL end-to-end user value — every meaningful capability, not just "it renders". Think about the WHOLE chain a user would do. For a rich feature that means cases such as: produce the feature's primary output end-to-end; exercise EACH option/variant it exposes and confirm each one actually takes effect (the output changes); walk the full multi-step chain a user would (create → configure → use the result); and produce the actual end deliverable the ticket promised — not just that a page rendered. Add the obvious failure cases (empty input, a route that errors). display_artifact this as "QA Test Plan" (markdown, numbered list of cases with the expected result for each).
+
+      STEP 2 — SET UP ONCE. Bring the backend up (see PROJECT ENVIRONMENT & AUTH above), start_dev_server, and authenticate ONCE — use a NON-CAPPED test user (e.g. the paid fixture; a free/daily-capped user can't generate). screenshot_page a protected route to confirm you see the real app, not the login form. Reuse this ONE dev server + session for every case.
+
+      STEP 3 — TEST EACH CASE, ONE AT A TIME, IN SERIES. Never run cases in parallel — concurrent browsers/generations will fall the hardware over. For each case in your plan:
+         • Drive the real flow against the running app (type/click/toggle the actual controls; read the source for selectors if needed). For an async result, use a record_walkthrough 'waitFor' step on the success element (timeout up to 180s) so you capture the RESULT, not a spinner.
+         • RECORD THE PAGE WHERE THE RESULT ACTUALLY RENDERS — NOT where you clicked the button. The #1 recording failure is filming the form/dashboard you triggered the action on, while the real result renders on a DIFFERENT route (e.g. after Generate the app navigates to a project/result page like /project/...). Watch what URL the app lands on (read the dev server log / the browser URL), then point record_walkthrough at THAT result URL and waitFor the result element there (the rendered output, the populated result view). If the result is reachable by URL (e.g. it carries a result id), navigate straight to that URL and record it. A video that only shows the input form with "no result yet" is a FAIL — fix the recording.
+         • Use present:false probes while finding selectors/URLs so they stay out of Deliverables.
+         • Capture evidence that SHOWS the result: a screenshot (present:true for the key ones) and/or a short walkthrough video OF THE RESULT PAGE.
+         • VERIFY WITH YOUR EYES: analyze_image the capture and judge whether the result is actually correct for THIS case — e.g. "did applying this option actually change the output vs before?", "does this match what the case expected?". Record the case verdict (PASS/FAIL) + the concrete evidence (the ACTUAL capture filename — never cite a file you didn't save).
+         • MOTION / TIME-BASED CASES NEED A MOTION TEST, NOT A SINGLE FRAME. If a case involves any motion or time-based behaviour (an animation, a transition, a drag, a live-updating value, a playing media element), a static screenshot proves NOTHING — a control existing is not proof anything actually moves. Capture the element at TWO+ moments while it should be changing (e.g. screenshot, wait ~400ms, screenshot again — or sample frames from the recorded video) and confirm the pixels actually CHANGED between them. If the frames are identical when something should be moving, it is NOT working — that is a FAIL, reject to Build.
+         • A case fails if it errors, the capability is missing, the result is wrong (e.g. the action doesn't actually change anything), or you could not capture the result. Note it precisely.
+
+      STEP 4 — SURFACE EVERY CASE + REPORT. Each scenario must be visible at the QA state, not buried in one report:
+         • Present EACH important case as its OWN labeled deliverable so it bubbles up — named exactly "Case N — <case> — PASS" or "Case N — <case> — FAIL" (e.g. "Case 12 — Drag card to Done — FAIL"). THE CASE DELIVERABLE MUST BE THE ACTUAL CAPTURE — an IMAGE or VIDEO, not a text note. The human SPOT-CHECKS QA by looking at these; a markdown "Case N" note they can't see is the #1 QA failure. So either screenshot_page/record_walkthrough with present:true, OR display_artifact with file:"<path to the .png/.jpg/.mp4 you captured>" (passing `file` is what makes it render as a picture/video — a `body:` string renders as unviewable text). Use a SCREENSHOT for static cases and a VIDEO for motion / time-based cases so the change is actually visible. Put the numbers/notes (pixel diffs, brightness) in the NAME and in the QA Report — never as a markdown-only Case deliverable. The reviewer must be able to scan the QA deliverables and SEE every scenario's evidence + verdict at a glance, as thumbnails.
+         • Then fold EVERY case from this run into the QA SCENARIO LEDGER (`QA-SCENARIOS.md`) per the ledger rules above — that persistent table, not a one-off report, is the canonical record. Write it, display it as "QA Scenarios", commit it, and update the PR body if a PR is open.
+      Overall verdict: if ANY important case fails (core flow broken, runtime error, the real end deliverable isn't produced, a claimed capability doesn't actually work — e.g. an animation that doesn't move), reject with specific per-case reasons (loops to Build). Only request_approval if the feature genuinely works across the cases with shown, vision-verified evidence.
+    modes:
+      smoke: |-
+        SMOKE TEST (the human will verify the real functionality themselves — often because the real path costs money or minutes, e.g. a paid model generation). Do a FAST, cheap sanity pass ONLY:
+        • Bring the app up (start_dev_server; authenticate if it's auth-walled).
+        • Confirm the feature is REACHABLE and the page renders WITHOUT a runtime error / 5xx / console exception — i.e. the build actually loads and the new UI is present.
+        • Do ONE quick happy-path interaction to confirm it doesn't immediately crash (open the control / click the primary button; check no exception).
+        • CAPTURE VISUAL EVIDENCE — this is the spot-check the human actually wants from a smoke pass. record_walkthrough a SHORT video (present:true) of that one happy-path flow (app loads → primary action), named "Smoke Test — <feature> — walkthrough". ALSO present at least one key screenshot as a real image deliverable (screenshot_page present:true, or display_artifact with file:"<the .png>") so the reviewer can SEE it loaded — do NOT just name the screenshot file in the markdown note. A smoke pass with NO viewable video/image deliverable is incomplete.
+        • Do NOT decompose into many cases, do NOT run expensive or real external generations, do NOT assert deep output correctness — that's the human's job here. (One short video + a screenshot is the bar, not a per-case vision matrix.)
+        STILL MAINTAIN THE QA SCENARIO LEDGER (smoke level). Read `QA-SCENARIOS.md` at the repo root if it exists. Add/refresh a row for each thing you checked this run (boots, feature reachable, the one happy path), marking "Last tested" with today's date + "smoke" — smoke verdicts are shallow (loads / doesn't crash), so say so in the Scenario/Expected text. Keep it as ONE clean GitHub-flavored Markdown table (NO blank lines between rows), columns exactly: | # | Scenario | Expected | Verdict | Last tested | Evidence |, with a one-line header (date · smoke · short summary). Write the file back, display_artifact it as "QA Scenarios", COMMIT it on the branch, and if a PR is already open (`gh pr view`) update its body to embed the latest table (`gh pr edit --body ...`).
+        Also display_artifact a short "Smoke Test" note (markdown): what you checked, that it loaded + the one happy path, any crash/error. If it loads and the happy path doesn't crash → request_approval (note the human will do the real functional verification via Test-it). If it crashes / errors / the feature is unreachable or obviously not wired → reject to Build with specifics. A smoke test still catches "it doesn't even load / the button throws" — it just doesn't prove deep correctness.
+      mockApi: |-
+        MOCK-API QA. Test the FULL end-to-end flow so it looks and feels like production — but for any EXTERNAL / PAID downstream service the feature calls (a model API like Replicate, a 3rd-party API, etc.), do NOT hit the real upstream. Route that call to an LLM that fabricates a plausible response ON THE FLY, keyed to the input — realistic, input-varying fake data at zero upstream cost. If the feature has NO external/paid service, just run it as rigorous QA (note there's nothing to mock).
+        Set it up agentically — pick what fits the feature:
+        • Find the external integration in the code (the client/route that calls the paid service).
+        • Replace ONLY that call with an LLM-GENERATED response, fabricated LIVE on every request: add a TEMPORARY local mock whose handler, on EACH call, actually invokes a model (shell out to the `ollama` or `claude` CLI on this machine, or call an LLM HTTP API) and returns what the LLM invents — shaped exactly like the real API's response and derived from the request input. This is the whole point of mockApi: a real model devises fresh, believable data on the fly. Do NOT use a hardcoded or rotating array of canned responses (a `POOL`/fixture defeats the purpose). The output must genuinely vary call-to-call and reflect any request input.
+        • Point the running app at the mock (env override / the mock route) and run the real user flow against it.
+        This mock is a QA-ONLY harness — do NOT commit it to the PR (keep it out of the source diff, or revert it after).
+        Then test like rigorous QA but against the mock: drive the real flow, capture evidence, and VERIFY the wiring is real — the output reflects the input and CHANGES when the input changes (two different inputs → two different fabricated results). The point is to prove everything DOWNSTREAM of the external call is correctly wired (the UI sends the input, consumes the response, renders the result) without spending on the upstream. A flow that only "works" with a fixed mock that ignores input is the same hollow-implementation failure → reject to Build.
+        Present cases as in rigorous QA (display_artifact per case), and MAINTAIN THE QA SCENARIO LEDGER exactly as rigorous mode does: read `QA-SCENARIOS.md`, expand/update it with this run's scenarios (mark "Last tested" with today's date + "mockApi", and note in the row that the upstream was LLM-mocked, not real), keep it as ONE clean GitHub-flavored Markdown table (NO blank lines between rows), columns exactly: | # | Scenario | Expected | Verdict | Last tested | Evidence |, with a one-line header. Write it back, display_artifact it as "QA Scenarios", COMMIT it on the branch, and if a PR is open (`gh pr view`) update its body with the latest table (`gh pr edit --body ...`). Reject to Build on any broken case; otherwise request_approval — the human will exercise the REAL upstream themselves.
+  - id: acceptance
+    name: Acceptance
+    rejectTo: build
+    tools:
+      - read_file
+      - list_directory
+      - search_code
+      - run_command
+      - write_file
+      - edit_file
+      - display_artifact
+      - start_dev_server
+      - authenticate
+      - screenshot_page
+      - record_walkthrough
+      - analyze_image
+    prompt: |-
+      Final acceptance: step back and judge whether this actually satisfies the TICKET as a user would expect — not just the letter of the spec. Consider completeness, UX quality, and that nothing important was missed.
+      display_artifact an "Acceptance" note (markdown) with your judgement. If it doesn't meet the bar, reject with reasons (loops back to Build). If it does, request_approval.
+  - id: pr
+    name: Open PR
+    rejectTo: build
+    # Terminal, re-checkable phase. Because a PR keeps changing AFTER it's opened (the base
+    # moves, CI runs), this phase is `watchable`: the human can re-run it on demand (a button
+    # on the ticket, an icon in the dashboard) to bring the PR up to date — rebase, resolve
+    # conflicts, confirm checks. The generic engine only re-runs a watchable phase; WHAT that
+    # means lives here (this prompt + watch_pr), not in the engine. Other machines set their
+    # own watchable terminal with their own checker tool — nothing here is baked into the app.
+    watchable:
+      label: Check PR
+      icon: "🔄"
+      note: |-
+        RE-CHECK this open PR and bring it up to date — the base branch or CI may have moved since you last touched it. Do NOT re-create the PR; it already exists.
+        1. Call watch_pr — it polls GitHub and reports every check's outcome, whether the PR is mergeable, and whether the branch is BEHIND its base or CONFLICTS with it.
+        2. React to what it reports: BEHIND base or CONFLICTS → rebase onto the latest base (`git fetch origin <base>` → `git rebase origin/<base>`), resolve any conflicts keeping BOTH intents, re-verify (`npx tsc --noEmit` + fast checks), then `git push --force-with-lease`. A check FAILING → read the failing job's logs, fix the root cause, commit only the source you changed, push. Then call watch_pr AGAIN to confirm the new run is green.
+        3. Do NOT merge the PR (the human lands it). If a conflict is genuinely unreconcilable or the fix needs a real Build-level change, `reject` to Build with the exact file/hunk/check + why. If it's blocked on something only a human can clear (a required review, an external outage), say so and finish.
+        Then display_artifact an updated "PR status" note (the link, the final per-check table, mergeable/merge-state, and what you rebased/fixed) and request_approval.
+    tools:
+      - read_file
+      - list_directory
+      - search_code
+      - run_command
+      - write_file
+      - edit_file
+      - display_artifact
+      - start_dev_server
+      - authenticate
+      - screenshot_page
+      - record_walkthrough
+      - analyze_image
+      - test_drive
+      - watch_pr
+    prompt: |-
+      Open the pull request — but FIRST rebase onto the latest base so the PR merges cleanly. The base branch may have moved while this loop ran; catch any conflicts here, not in review. (If a PR for this branch ALREADY exists — e.g. you were re-run to re-check it — do NOT create a second one: update it and watch it instead, per the last step.)
+
+      1. COMMIT all your work on this branch. Stage only the source files you changed (git add <paths>) — never the factory scratch (prd.md, spec.md, *.md plans, option-*.html, .captures/). EXCEPTION: DO commit `QA-SCENARIOS.md` — it is the QA scenario ledger, an intentional review artifact that belongs in the PR.
+      2. REBASE onto the latest base:
+         - git fetch origin <base> || true
+         - git rebase origin/<base>   (fall back to the local <base> if origin can't be reached)
+         - IF THERE ARE CONFLICTS: resolve them yourself. Open each conflicted file and produce a correct MERGED result that keeps BOTH intents — your feature change AND whatever changed on the base. Never blindly take one side or delete the other's work. Then git add the resolved files and git rebase --continue. Repeat until the rebase finishes. If a conflict is genuinely unreconcilable, STOP and call reject explaining the exact file + hunk and why.
+      3. RE-VERIFY after rebasing — the rebase can combine changes that no longer compile. Run the repo checks (npx tsc --noEmit, and any fast lint/test). Fix anything the rebase broke.
+      4. PUSH the rebased branch: git push -u origin HEAD --force-with-lease (a rebase rewrites history, so a plain push is rejected). On a first push, a normal git push -u origin HEAD is fine.
+      5. OPEN the PR: gh pr create --title "..." --body "..." --base <base> — body covers what changed, why, how it was tested, and (if any) that you rebased / resolved conflicts. For "how it was tested", EMBED the full QA scenario table from `QA-SCENARIOS.md` directly in the PR body (under a "## QA scenarios tested" heading) so reviewers see every scenario + verdict at a glance — paste the actual Markdown table, do not just link the file. If a PR for this branch already exists, `gh pr edit --body ...` to refresh it with the latest table instead. Capture the PR URL.
+      6. WATCH IT before you finish: call watch_pr — it polls GitHub until the PR's CI checks conclude and reports each check + whether the branch is still mergeable / BEHIND its base / CONFLICTS. If it comes back BEHIND or CONFLICTING, rebase again and `git push --force-with-lease`; if a check is FAILING, read the failing job's logs, fix the root cause, push, and call watch_pr again. Do NOT hand-roll a sleep loop — that's what watch_pr is for. Don't merge the PR (the human lands it); if a check needs a real Build-level fix, `reject` to Build. (Later, the human can hit "Check PR" to re-run this phase and re-verify at any time.)
+
+      display_artifact a "PR status" note (markdown) with the PR link, a short summary, the per-check result (name → ✓/✗) from watch_pr, whether the branch is mergeable, and whether a rebase or conflict resolution was needed. Then request_approval.
+  # OFF-PATH LEAF — skipped in the normal flow; only runs when the human or the Conductor
+  # deliberately routes here for a hard bug. When done it rejoins at Review (returnTo).
+  - id: bisect
+    name: Deep-dive
+    offPath: true
+    returnTo: review
+    rejectTo: build
+    tools:
+      - read_file
+      - list_directory
+      - search_code
+      - run_command
+      - write_file
+      - edit_file
+      - display_artifact
+      - start_dev_server
+      - authenticate
+      - screenshot_page
+      - record_walkthrough
+      - analyze_image
+    prompt: |-
+      DEEP-DIVE / BISECT — an off-path leaf you were routed into DELIBERATELY because a hard bug (often visual/behavioural) survived a normal Build→QA pass. Your ONE job: find the TRUE ROOT CAUSE and fix it. Do not stop at a plausible surface fix, and do not just re-state that the code "looks correct".
+
+      SAFETY when you run the app: bring a server up ONLY with start_dev_server (it picks a free, per-run port) — NEVER a bare `npm run dev` / `next dev`, and NEVER bind, free, or `kill` a fixed port like 7777 (that is very likely the user's OWN running app). Authenticate ONLY with the repo's TEST fixtures — NEVER read prod secrets (real `.env.local`, prod DB/Redis URL, prod token) and NEVER try to defeat auth by guessing passwords or reading password hashes.
+
+      0. LOOK at what the human is pointing at. If there are image(s) in `.feedback/`, Read them (or analyze_image if your model is text-only) — that is the visual evidence. Restate the exact symptom in one line.
+      1. REPRODUCE IT OBJECTIVELY, FIRST — before changing anything. Don't eyeball it. Build the SMALLEST harness that makes the bug MEASURABLE: a headless script that loads the REAL asset/data and computes a concrete metric (counts, pixel diffs, pose/geometry checks), or drive the running app and capture frames. Produce a number or picture that is unambiguously WRONG. If you cannot reproduce it, say so and reject — never guess.
+      2. BISECT to the exact cause. Toggle/disable each suspect stage or transform ONE AT A TIME and re-measure, narrowing until you isolate the precise file:line responsible. DISTRUST existing "fixes": a guard/compensation/"fix" already in the code can BE the bug — measure with it ON vs OFF. The rendered/measured result is the only truth; code that "looks right" proves nothing.
+      3. FIX the root cause — do NOT stack another compensating hack on top of the wrong one; prefer removing the bad fix.
+      4. VERIFY by re-measuring AND by LOOKING — capture before/after evidence proving it's correct across the cases that were broken. A green build or "looks ok" is not proof.
+      5. display_artifact a "Root cause" note (markdown): the symptom, how you reproduced it (harness + numbers), the bisection that isolated it, the precise root cause (file:line), the fix, and the before/after evidence. Commit the fix (NOT the scratch harness). Then request_approval. If you genuinely cannot isolate it, reject to Build with everything you learned.

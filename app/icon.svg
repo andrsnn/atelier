@@ -1,0 +1,17 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <rect width="64" height="64" rx="14" fill="#0b0d12"/>
+  <!-- state machine: three states with a loop-back, the Atelier motif -->
+  <g fill="none" stroke="#e8a13a" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- forward path -->
+    <path d="M18 22 H30"/>
+    <path d="M40 22 H46 A0 0 0 0 1 46 22 L46 42 H40"/>
+    <path d="M30 42 H18"/>
+    <!-- loop-back arrow head -->
+    <path d="M23 37 L18 42 L23 47"/>
+  </g>
+  <g fill="#e8a13a">
+    <circle cx="16" cy="22" r="5"/>
+    <circle cx="35" cy="22" r="5"/>
+    <circle cx="35" cy="42" r="5"/>
+  </g>
+</svg>

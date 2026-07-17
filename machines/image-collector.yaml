@@ -1,0 +1,49 @@
+id: image-collector
+name: Image collector — Brief → Collect → Curate ↺ → Package
+description: "Gather images from the web, vision-check each against criteria, and package N accepted ones into a zip. Curate loops back to Collect until it has enough. A directive loop, not SDLC."
+version: v3-imgcollect-4
+settings:
+  maxLoops: 15
+  maxTurns: 160
+  phaseTimeoutMin: 60
+states:
+  - id: brief
+    name: Brief
+    gate: true
+    tools: [read_file, list_directory, run_command, write_file, display_artifact]
+    prompt: |-
+      Turn the goal into a precise COLLECTION SPEC for harvesting images, and write it to `brief.md` in the workspace so later phases read it. Cover:
+      - WHAT to collect — the subject / content / style, in concrete terms.
+      - SOURCES — which sites or web searches to pull from (list a few good starting points; you may use web search / fetch).
+      - COUNT — the target number N of accepted images (if the goal doesn't say, pick a sensible N and state it).
+      - ACCEPTANCE CRITERIA — a short, checkable list of what makes an image "correct" (content match, min resolution, no watermark/logo, not a duplicate, real photo vs illustration, license if it matters, …). These are EXACTLY what the Curate phase judges each image against, so be specific.
+      - OUTPUT — a single zip of the accepted images plus a manifest.
+      If anything is genuinely ambiguous, state your default and a question. display_artifact the spec ("Brief", markdown), then request_approval.
+  - id: collect
+    name: Collect
+    maxTurns: 250
+    tools: [read_file, list_directory, run_command, write_file, screenshot_page, display_artifact]
+    prompt: |-
+      Read `brief.md`. GATHER candidate images from the web into a `candidates/` folder in the workspace — aim for noticeably MORE than the target N, so Curate has room to reject weak ones. For each source: use web search / fetch to find image URLs (screenshot_page can help you see a gallery page), then DOWNLOAD each with the shell, e.g. `curl -L -o candidates/<name>.<ext> "<url>"`. Record where each came from in `sources.csv` (filename,url). Skip dead links, non-images, and tiny thumbnails; verify each download is a real, non-empty image file. Do NOT judge content quality deeply here — that's Curate's job; just collect a healthy pool of real image files.
+      If you were sent back from Curate, gather MORE candidates for the specific gaps it named — don't re-download what you already have.
+      When you have a solid pool (comfortably more than N), display_artifact a short summary (how many candidates, from which sources) and request_approval.
+  - id: curate
+    name: Curate
+    gate: true
+    rejectTo: collect
+    maxTurns: 300
+    tools: [read_file, list_directory, run_command, analyze_image, write_file, display_artifact]
+    prompt: |-
+      Read `brief.md` for the acceptance criteria and the target count N. Evaluate EACH file in `candidates/` against the criteria using analyze_image (ask it specifically about each criterion — content match, resolution, watermark, etc.). For each candidate decide ACCEPT or REJECT with a one-line reason grounded in what analyze_image actually reported. Copy accepted images into an `accepted/` folder; keep the BEST N and drop near-duplicates. Maintain `manifest.md` — a table of the accepted images (file, source url, why it meets the criteria).
+      - If you end up with FEWER than N accepted, reject (loops back to Collect): say exactly how many more you need and what was missing, so Collect can target the gap.
+      - When `accepted/` holds N images that genuinely meet the criteria, display_artifact a summary (the manifest + a few sample images via display_artifact, kind image) and request_approval.
+      Be honest — never accept an image you haven't actually vision-checked.
+  - id: package
+    name: Package
+    rejectTo: collect
+    output:
+      file: images.zip
+      label: the curated image set (zip)
+    tools: [read_file, list_directory, run_command, display_artifact]
+    prompt: |-
+      Package the accepted set into the workspace as EXACTLY `images.zip` (this exact filename — the phase's Download action is wired to it): `zip -j images.zip accepted/* manifest.md`. VERIFY it (`unzip -l images.zip`): it must contain exactly N valid, non-empty image files. If it's short or any file is broken, reject (back to Collect). Then display_artifact a "Delivered" note (markdown) with the count, sources, and the manifest table — you do NOT need to add a download link, this phase exposes the zip as a Download automatically. request_approval.

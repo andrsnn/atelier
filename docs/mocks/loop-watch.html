@@ -1,0 +1,164 @@
+<title>Loop Watch — Atelier</title>
+<style>
+  :root{
+    --background:#f4efe6; --surface:#fffdf7; --surface-2:#faf6ed;
+    --ink:#1a1814; --ink-soft:#5a5347; --ink-dim:#8a8273;
+    --rule:#d8cfbe; --rule-soft:#e7ded0;
+    --brand:#c8412d; --brand-soft:#e8725e; --brand-tint:#fbece8;
+    --warning:#b07b3e; --warning-tint:#f6ecd9;
+    --cond:#5848a0; --cond-soft:#7d6bc4; --cond-tint:#efe8fb; --cond-rule:#d8ccf2;
+    --shadow-rest:0 1px 2px rgba(26,24,20,.04),0 4px 12px rgba(26,24,20,.06);
+    --shadow-raised:0 2px 4px rgba(26,24,20,.06),0 18px 44px -10px rgba(26,24,20,.18);
+    --font-display:"Fraunces","Iowan Old Style",Georgia,serif;
+    --font-body:"Inter",ui-sans-serif,-apple-system,system-ui,sans-serif;
+    --font-mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --background:#17150f; --surface:#201d16; --surface-2:#262218;
+      --ink:#f3ecdd; --ink-soft:#c3baa8; --ink-dim:#8f8676; --rule:#3a3427; --rule-soft:#322c21;
+      --brand:#e8725e; --brand-soft:#f0917f; --brand-tint:#33221e;
+      --warning:#d3a366; --warning-tint:#2c2416;
+      --cond:#b3a4ea; --cond-soft:#9d8ada; --cond-tint:#241f33; --cond-rule:#3d3556;
+      --shadow-rest:0 1px 2px rgba(0,0,0,.3),0 4px 12px rgba(0,0,0,.35);
+      --shadow-raised:0 2px 4px rgba(0,0,0,.4),0 18px 44px -10px rgba(0,0,0,.55);
+    }
+  }
+  :root[data-theme="light"]{
+    --background:#f4efe6; --surface:#fffdf7; --surface-2:#faf6ed;
+    --ink:#1a1814; --ink-soft:#5a5347; --ink-dim:#8a8273; --rule:#d8cfbe; --rule-soft:#e7ded0;
+    --brand:#c8412d; --brand-soft:#e8725e; --brand-tint:#fbece8; --warning:#b07b3e; --warning-tint:#f6ecd9;
+    --cond:#5848a0; --cond-soft:#7d6bc4; --cond-tint:#efe8fb; --cond-rule:#d8ccf2;
+  }
+  :root[data-theme="dark"]{
+    --background:#17150f; --surface:#201d16; --surface-2:#262218;
+    --ink:#f3ecdd; --ink-soft:#c3baa8; --ink-dim:#8f8676; --rule:#3a3427; --rule-soft:#322c21;
+    --brand:#e8725e; --brand-soft:#f0917f; --brand-tint:#33221e; --warning:#d3a366; --warning-tint:#2c2416;
+    --cond:#b3a4ea; --cond-soft:#9d8ada; --cond-tint:#241f33; --cond-rule:#3d3556;
+  }
+
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--background);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;}
+  h1,h2{font-family:var(--font-display);font-weight:600;letter-spacing:-.01em;margin:0;text-wrap:balance;}
+  .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;}
+  .muted{color:var(--ink-dim);}
+
+  .topbar{display:flex;align-items:center;gap:18px;padding:0 24px;height:54px;border-bottom:1px solid var(--rule);
+    background:color-mix(in srgb,var(--background) 74%,transparent);backdrop-filter:blur(8px);}
+  .brand{font-size:15.5px;color:var(--ink-soft);} .brand b{color:var(--ink);font-weight:700;}
+  .brand i{font-style:normal;color:var(--ink-dim);font-size:12.5px;}
+  .brand-v{color:var(--brand);font-size:10.5px;margin-left:5px;font-weight:700;vertical-align:super;}
+  .themebtn{margin-left:auto;border:1px solid var(--rule);background:var(--surface);color:var(--ink-soft);border-radius:999px;width:32px;height:32px;cursor:pointer;font-size:14px;}
+
+  .wrap{max-width:640px;margin:0 auto;padding:40px 22px 70px;}
+
+  /* run heading */
+  .eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-dim);font-weight:700;margin-bottom:10px;}
+  h1.goal{font-size:24px;line-height:1.24;margin-bottom:16px;}
+  .facts{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:30px;}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;font-size:12.5px;
+    border:1px solid var(--rule);background:var(--surface-2);color:var(--ink-soft);}
+  .chip .dot{width:8px;height:8px;border-radius:999px;background:#2d6a4f;}
+  @media (prefers-color-scheme:dark){.chip .dot{background:#6fb191;}} :root[data-theme="dark"] .chip .dot{background:#6fb191;}
+  .chip.loop{color:var(--warning);border-color:color-mix(in srgb,var(--warning) 38%,transparent);background:var(--warning-tint);font-weight:600;}
+
+  /* the one card that matters */
+  .watch{background:var(--surface);border:1px solid var(--cond-rule);border-radius:18px;box-shadow:var(--shadow-raised);overflow:hidden;}
+  .watch-top{display:flex;align-items:center;gap:11px;padding:16px 22px;border-bottom:1px solid var(--cond-rule);
+    background:linear-gradient(180deg,var(--cond-tint),transparent);}
+  .badge{width:32px;height:32px;border-radius:10px;background:var(--cond);color:#fff;display:grid;place-items:center;font-size:16px;flex:0 0 auto;box-shadow:0 0 0 3px var(--cond-tint);}
+  .watch-top .who{font-size:14px;font-weight:600;font-family:var(--font-display);}
+  .watch-top .when{font-size:11.5px;color:var(--cond);font-weight:600;}
+
+  .watch-body{padding:22px;}
+  h2.answer{font-size:20px;line-height:1.32;color:var(--ink);margin-bottom:12px;}
+  h2.answer .em{color:var(--brand);}
+  .explain{font-size:15px;color:var(--ink-soft);line-height:1.62;}
+  .explain b{color:var(--ink);font-weight:600;} .explain code{font-family:var(--font-mono);font-size:.85em;background:var(--surface-2);border:1px solid var(--rule-soft);border-radius:5px;padding:.06em .34em;color:var(--ink);}
+
+  /* one plain line of the pattern — no charts */
+  .pattern{display:flex;align-items:center;gap:10px;margin:18px 0 4px;padding:12px 15px;border-radius:12px;background:var(--surface-2);border:1px solid var(--rule-soft);font-size:13.5px;color:var(--ink-soft);}
+  .pattern .lp{font-weight:700;color:var(--warning);white-space:nowrap;}
+  .pattern .sep{color:var(--ink-dim);}
+
+  .rec{margin-top:22px;display:flex;flex-wrap:wrap;gap:10px;}
+  .btn{display:inline-flex;align-items:center;gap:7px;padding:11px 17px;border-radius:11px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;border:1px solid var(--rule);background:var(--surface);color:var(--ink);box-shadow:var(--shadow-rest);}
+  .btn:hover{background:var(--surface-2);}
+  .btn.go{background:var(--cond);border-color:var(--cond);color:#fff;} .btn.go:hover{background:var(--cond-soft);color:#fff;}
+
+  /* ask box */
+  .ask{margin-top:26px;}
+  .ask .lbl{font-size:12.5px;color:var(--ink-dim);margin-bottom:9px;}
+  .ask-row{display:flex;gap:9px;}
+  .ask input{flex:1;border:1px solid var(--rule);background:var(--surface);border-radius:12px;padding:12px 15px;font-size:14px;font-family:inherit;color:var(--ink);outline:none;}
+  .ask input:focus{border-color:var(--cond);box-shadow:0 0 0 3px var(--cond-tint);}
+  .ask input::placeholder{color:var(--ink-dim);}
+  .ask .btn.go{padding:12px 18px;}
+
+  .foot{margin-top:34px;font-size:12px;color:var(--ink-dim);line-height:1.6;text-align:center;}
+</style>
+
+<div class="topbar">
+  <div class="brand"><b>Atelier</b><span class="brand-v">v3</span> &nbsp;<i>workshop</i></div>
+  <button class="themebtn" id="themebtn" aria-label="Toggle theme" title="Toggle light/dark">◐</button>
+</div>
+
+<div class="wrap">
+  <div class="eyebrow">Run · <span class="mono">r_8fk21c</span></div>
+  <h1 class="goal">Add a “Clear completed” button to the todo footer</h1>
+  <div class="facts">
+    <span class="chip"><span class="dot"></span>Running</span>
+    <span class="chip loop">↻ Looped 11 times</span>
+    <span class="chip">Build ⇄ QA</span>
+  </div>
+
+  <!-- one card: the Conductor tells you what's wrong, plainly -->
+  <div class="watch">
+    <div class="watch-top">
+      <div class="badge">◆</div>
+      <div>
+        <div class="who">The Conductor is watching this run</div>
+        <div class="when">looked just now</div>
+      </div>
+    </div>
+
+    <div class="watch-body">
+      <h2 class="answer">It’s <span class="em">stuck fixing the wrong file.</span></h2>
+      <p class="explain">
+        The check keeps failing for the <b>same reason</b> — the button shows even when nothing’s completed.
+        Each round it re-edits <code>Footer.tsx</code>, but the real show/hide logic lives in <code>App.tsx</code>.
+        So the fix never lands, and it tries again. It won’t sort this out on its own.
+      </p>
+
+      <div class="pattern">
+        <span class="lp">↻ Same problem, 6 rounds</span>
+        <span class="sep">·</span>
+        <span>QA rejects → Build retries → still the wrong file</span>
+      </div>
+
+      <div class="rec">
+        <button class="btn go">◆ Point it at the right file &amp; continue</button>
+        <button class="btn">⏸ Pause &amp; take a look</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ask, if you want more -->
+  <div class="ask">
+    <div class="lbl">Ask the Conductor anything about this run</div>
+    <div class="ask-row">
+      <input placeholder="e.g. “why is it stuck?” · “is the check too strict?”" />
+      <button class="btn go">Ask</button>
+    </div>
+  </div>
+
+  <div class="foot">Loop Watch · the Conductor keeps an eye on every run and tells you when one’s going in circles.</div>
+</div>
+
+<script>
+  document.getElementById('themebtn').addEventListener('click',function(){
+    var cur=document.documentElement.getAttribute('data-theme');
+    var sysDark=window.matchMedia('(prefers-color-scheme:dark)').matches;
+    document.documentElement.setAttribute('data-theme', cur?(cur==='dark'?'light':'dark'):(sysDark?'light':'dark'));
+  });
+</script>

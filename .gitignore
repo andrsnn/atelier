@@ -1,0 +1,26 @@
+node_modules
+.next
+.factory
+*.db
+*.db-shm
+*.db-wal
+workspaces
+
+# runtime scratch written into a run's workspace (captures + frozen deliverable snapshots)
+.captures
+.deliverables
+
+# secrets / local env (NEVER commit real keys — use .env.example as the template)
+.env
+.env.local
+.env*.local
+
+# your local project registry (points at your repos) — use the .example as a template
+atelier.projects.json
+
+# build cache
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+
+# publish-readiness gate output (local report, regenerated each run)
+.publish-readiness

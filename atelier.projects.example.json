@@ -1,0 +1,16 @@
+[
+  {
+    "id": "my-app",
+    "name": "My App",
+    "repoPath": "/absolute/path/to/your/repo",
+    "baseBranch": "main",
+    "devCommand": "npm run dev",
+    "setupCommand": "",
+    "auth": {
+      "loginPath": "/auth/login",
+      "emailEnv": "E2E_TEST_EMAIL",
+      "passwordEnv": "E2E_TEST_PASSWORD",
+      "authedRoutes": ["/dashboard"]
+    }
+  }
+]
